@@ -50,6 +50,7 @@
 #if FOLLY_HAS_LIBURING
 
 #include <liburing.h> // @manual
+#include <net/if.h>
 
 namespace folly {
 
@@ -59,6 +60,9 @@ class IoUringBackend : public EventBaseBackendBase {
    public:
     using std::runtime_error::runtime_error;
   };
+
+  using ResolveNapiIdCallback =
+      std::function<int(int ifindex, uint32_t queueId)>;
 
   struct Options {
     enum Flags {
@@ -189,6 +193,38 @@ class IoUringBackend : public EventBaseBackendBase {
       return *this;
     }
 
+    Options& setZeroCopyRx(bool v) {
+      zeroCopyRx = v;
+
+      return *this;
+    }
+
+    Options& setZeroCopyRxInterface(std::string v) {
+      zcRxIfname = std::move(v);
+      zcRxIfindex = ::if_nametoindex(zcRxIfname.c_str());
+      if (zcRxIfindex == 0) {
+        throw std::runtime_error(folly::to<std::string>(
+            "invalid network interface name: ",
+            zcRxIfname,
+            ", errno: ",
+            errno));
+      }
+
+      return *this;
+    }
+
+    Options& setZeroCopyRxQueue(int queueId) {
+      zcRxQueueId = queueId;
+
+      return *this;
+    }
+
+    Options& setResolveNapiCallback(ResolveNapiIdCallback&& v) {
+      resolveNapiId = std::move(v);
+
+      return *this;
+    }
+
     ssize_t sqeSize{-1};
 
     size_t capacity{256};
@@ -220,6 +256,13 @@ class IoUringBackend : public EventBaseBackendBase {
     std::set<uint32_t> sqCpus;
 
     std::string sqGroupName;
+
+    // Zero copy receive
+    bool zeroCopyRx{false};
+    std::string zcRxIfname;
+    int zcRxQueueId{-1};
+    int zcRxIfindex{-1};
+    ResolveNapiIdCallback resolveNapiId;
   };
 
   explicit IoUringBackend(Options options);
@@ -237,6 +280,7 @@ class IoUringBackend : public EventBaseBackendBase {
 
   // from EventBaseBackendBase
   int getPollableFd() const override { return ioRing_.ring_fd; }
+  int getNapiId() const override { return napiId_; }
 
   event_base* getEventBase() override { return nullptr; }
 
@@ -1065,6 +1109,7 @@ class IoUringBackend : public EventBaseBackendBase {
   std::unique_ptr<IoSqe> signalReadEntry_;
   IoSqeList freeList_;
   bool usingDeferTaskrun_{false};
+  int napiId_{-1};
 
   // timer related
   int timerFd_{-1};

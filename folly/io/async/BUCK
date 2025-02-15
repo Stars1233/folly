@@ -255,9 +255,6 @@ cpp_library(
 cpp_library(
     name = "async_transport_certificate",
     headers = ["AsyncTransportCertificate.h"],
-    exported_deps = [
-        "//folly:optional",
-    ],
 )
 
 cpp_library(
@@ -594,8 +591,8 @@ cpp_library(
         "linux",
         select({
             "DEFAULT": ["fbsource//third-party/liburing:uring"],
-            # @fb-only: "ovr_config//distro/constraints:conda": [], 
-            # @fb-only: "ovr_config//os:linux-sgx": [], 
+            # @fb-only[end= ]: "ovr_config//distro/constraints:conda": [],
+            # @fb-only[end= ]: "ovr_config//os:linux-sgx": [],
         }),
     )],
 )
@@ -776,6 +773,7 @@ cpp_library(
     ],
     modular_headers = False,
     deps = [
+        ":io_uring_provided_buffer_ring",
         "//folly:demangle",
         "//folly:file_util",
         "//folly:glog",
@@ -783,7 +781,6 @@ cpp_library(
         "//folly:spin_lock",
         "//folly:string",
         "//folly/container:f14_hash",
-        "//folly/io/async:io_uring_provided_buffer_ring",
         "//folly/lang:bits",
         "//folly/portability:gflags",
         "//folly/portability:sockets",
