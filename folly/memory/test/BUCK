@@ -137,6 +137,7 @@ fb_dirsync_cpp_unittest(
     deps = [
         "fbsource//third-party/glog:glog",
         "//folly:random",
+        "//folly:traits",
         "//folly/memory:uninitialized_memory_hacks",
         "//folly/portability:gtest",
     ],

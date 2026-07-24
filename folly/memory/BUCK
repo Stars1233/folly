@@ -97,6 +97,9 @@ fb_dirsync_cpp_library(
     name = "uninitialized_memory_hacks",
     headers = ["UninitializedMemoryHacks.h"],
     use_raw_headers = True,
+    exported_deps = [
+        "//folly:traits",
+    ],
 )
 
 fb_dirsync_cpp_library(

@@ -19,9 +19,11 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <folly/Random.h>
+#include <folly/Traits.h>
 #include <folly/portability/GTest.h>
 
 #include <glog/logging.h>
@@ -322,6 +324,69 @@ TEST(UninitializedMemoryHacks, randomVectorByte) {
 
 TEST(UninitializedMemoryHacks, randomVectorInt) {
   testRandom<std::vector<int>>();
+}
+
+namespace {
+
+template <typename C, typename... A>
+using detect_resize_without_initialization =
+    decltype(folly::resizeWithoutInitialization(
+        std::declval<C&>(), std::declval<A>()...));
+
+template <typename Value>
+struct MemberResizeContainer {
+  using value_type = Value;
+  using size_type = std::size_t;
+  size_type resizedTo = 0;
+  bool memberCalled = false;
+  void resize_without_initialization(size_type n) {
+    memberCalled = true;
+    resizedTo = n;
+  }
+};
+
+struct NoResizeContainer {
+  using value_type = int;
+};
+
+} // namespace
+
+static_assert(
+    folly::is_detected_v<
+        detect_resize_without_initialization,
+        MemberResizeContainer<int>,
+        std::size_t>,
+    "a resize_without_initialization member with a trivial value_type must be detected");
+static_assert(
+    !folly::is_detected_v<
+        detect_resize_without_initialization,
+        MemberResizeContainer<std::string>,
+        std::size_t>,
+    "the member path must be gated on a trivially destructible value_type");
+static_assert(
+    !folly::is_detected_v<
+        detect_resize_without_initialization,
+        NoResizeContainer,
+        std::size_t>,
+    "a container with neither a member nor std support must not be detected");
+static_assert(
+    folly::is_detected_v<
+        detect_resize_without_initialization,
+        std::vector<int>,
+        std::size_t>,
+    "std::vector<int> must remain detected via the default path");
+static_assert(
+    folly::is_detected_v<
+        detect_resize_without_initialization,
+        std::string,
+        std::size_t>,
+    "std::string must remain detected via the default path");
+
+TEST(UninitializedMemoryHacks, dispatchesToMember) {
+  MemberResizeContainer<int> target;
+  folly::resizeWithoutInitialization(target, 42);
+  EXPECT_TRUE(target.memberCalled);
+  EXPECT_EQ(target.resizedTo, 42u);
 }
 
 // We are deliberately putting this at the bottom to make sure it can follow use

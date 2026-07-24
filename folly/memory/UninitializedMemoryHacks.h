@@ -19,7 +19,10 @@
 #include <cstddef>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
+
+#include <folly/Traits.h>
 
 // On MSVC an incorrect <version> header get's picked up
 #if !defined(_MSC_VER) && __has_include(<version>)
@@ -47,8 +50,9 @@ void unsafeVectorSetLargerSize(std::vector<T>& v, std::size_t n);
 
 /*
  * This file provides helper functions resizeWithoutInitialization()
- * that can resize std::basic_string or std::vector without constructing
- * or initializing new elements.
+ * that can resize containers without constructing or initializing new
+ * elements.  Support is provided for std::basic_string, std::vector, and
+ * any container that exposes resize_without_initialization().
  *
  * IMPORTANT: These functions can be unsafe if used improperly.  If you
  * don't write to an element with index >= oldSize and < newSize, reading
@@ -82,6 +86,8 @@ void unsafeVectorSetLargerSize(std::vector<T>& v, std::size_t n);
  * chopped off with a second call to .resize().
  */
 
+namespace detail {
+
 /**
  * Like calling s.resize(n), but when growing the string does not
  * initialize new elements.  It is undefined behavior to read from
@@ -95,11 +101,9 @@ void unsafeVectorSetLargerSize(std::vector<T>& v, std::size_t n);
  *
  * IMPORTANT: Read the warning at the top of this header file.
  */
-template <
-    typename T,
-    typename =
-        typename std::enable_if<std::is_trivially_destructible<T>::value>::type>
-inline void resizeWithoutInitialization(
+template <typename T>
+  requires std::is_trivially_destructible_v<T>
+inline void resizeWithoutInitializationImpl(
     std::basic_string<T>& s, std::size_t n) {
   if (n <= s.size()) {
     s.resize(n);
@@ -109,7 +113,7 @@ inline void resizeWithoutInitialization(
     if (n > s.capacity()) {
       s.reserve(n);
     }
-    detail::unsafeStringSetLargerSize(s, n);
+    unsafeStringSetLargerSize(s, n);
   }
 }
 
@@ -134,21 +138,55 @@ inline void resizeWithoutInitialization(
  *
  * IMPORTANT: Read the warning at the top of this header file.
  */
-template <
-    typename T,
-    typename = typename std::enable_if<
-        std::is_trivially_destructible<T>::value &&
-        !std::is_same<T, bool>::value>::type>
-void resizeWithoutInitialization(std::vector<T>& v, std::size_t n) {
+template <typename T>
+  requires(std::is_trivially_destructible_v<T> && !std::is_same_v<T, bool>)
+void resizeWithoutInitializationImpl(std::vector<T>& v, std::size_t n) {
   if (n <= v.size()) {
     v.resize(n);
   } else {
     if (n > v.capacity()) {
       v.reserve(n);
     }
-    detail::unsafeVectorSetLargerSize(v, n);
+    unsafeVectorSetLargerSize(v, n);
   }
 }
+
+template <typename C, typename... A>
+using detect_resize_without_initialization_member =
+    decltype(std::declval<C&>().resize_without_initialization(
+        std::declval<A>()...));
+
+template <typename C>
+using resize_without_initialization_value_type =
+    typename remove_cvref_t<C>::value_type;
+
+template <typename C>
+inline constexpr bool has_resize_without_initialization_member_v =
+    is_detected_v<
+        detect_resize_without_initialization_member,
+        C,
+        std::size_t> &&
+    std::is_trivially_destructible_v<
+        detected_t<resize_without_initialization_value_type, C>>;
+
+struct resize_without_initialization_fn {
+  template <typename C>
+    requires has_resize_without_initialization_member_v<C>
+  void operator()(C& c, std::size_t n) const {
+    c.resize_without_initialization(n);
+  }
+
+  template <typename C>
+  auto operator()(C& c, std::size_t n) const
+      -> decltype(resizeWithoutInitializationImpl(c, n)) {
+    resizeWithoutInitializationImpl(c, n);
+  }
+};
+
+} // namespace detail
+
+inline constexpr detail::resize_without_initialization_fn
+    resizeWithoutInitialization{};
 
 namespace detail {
 

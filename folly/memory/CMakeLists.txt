@@ -212,6 +212,8 @@ folly_add_library(
   NAME uninitialized_memory_hacks
   HEADERS
     UninitializedMemoryHacks.h
+  EXPORTED_DEPS
+    folly_traits
 )
 
 add_subdirectory(detail)
